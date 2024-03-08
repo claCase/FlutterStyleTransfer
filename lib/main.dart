@@ -1,5 +1,9 @@
+import 'package:device_info_plus/device_info_plus.dart';
+//import 'package:app_settings/app_settings.dart' as app_settings;
+import 'package:permission_handler/permission_handler.dart' as ph;
 import 'dart:async';
 import 'dart:typed_data';
+import 'package:path/path.dart' as pd;
 import 'package:flutter/material.dart';
 import 'package:tflite_flutter/tflite_flutter.dart' as tflite;
 import 'package:image/image.dart' as img;
@@ -7,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:developer';
 import 'dart:io' as dio;
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:path_provider/path_provider.dart' as pp;
 
 void main() {
   runApp(const MyApp(title: 'App'));
@@ -37,8 +42,8 @@ class MyHomePage extends StatefulWidget {
 }
 
 class DenseExample extends State<MyHomePage> {
-  final String modelPath_predict = "assets/models/style_predict.tflite";
-  final String modelPath_style = "assets/models/style_transform.tflite";
+  final String modelPathPredict = "assets/models/style_predict.tflite";
+  final String modelPathStyle = "assets/models/style_transform.tflite";
   final styleBasePath = "assets/styles/";
   String? stylePath = '';
   String? contentPath = '';
@@ -54,8 +59,8 @@ class DenseExample extends State<MyHomePage> {
   late List<List<List<List<double>>>> outputsStylized;
   final _picker = ImagePicker();
   late img.Image? imageContent;
-  Uint8List? imageContentFile = null;
-  Uint8List? imageContentStylized = null;
+  Uint8List? imageContentFile;
+  Uint8List? imageContentStylized;
   late img.Image? imageStyle;
   String modelLoadedPredict = 'Predict NotLoaded';
   String modelLoadedStyle = 'Predict NotLoaded';
@@ -63,6 +68,7 @@ class DenseExample extends State<MyHomePage> {
   String outputText = '0';
   Map contentSize = {"height": 384, "width": 384};
   Map styleSize = {"height": 256, "width": 256};
+  Map originalSize = {"height": 384, "width": 384};
 
   Future<void> _loadModelPredict() async {
     final options = tflite.InterpreterOptions();
@@ -79,7 +85,7 @@ class DenseExample extends State<MyHomePage> {
     // final delegate = tflite.GpuDelegate();
     // options.addDelegate(delegate);
     _interpreterPredict =
-        await tflite.Interpreter.fromAsset(modelPath_predict, options: options);
+        await tflite.Interpreter.fromAsset(modelPathPredict, options: options);
     _inputTensorPredict = _interpreterPredict.getInputTensors().first;
     log('predict inputs ${_inputTensorPredict.toString()}');
     _outputTensorPredict = _interpreterPredict.getOutputTensors().first;
@@ -98,7 +104,7 @@ class DenseExample extends State<MyHomePage> {
       options.addDelegate(delegate);
     }
     _interpreterStyle =
-        await tflite.Interpreter.fromAsset(modelPath_style, options: options);
+        await tflite.Interpreter.fromAsset(modelPathStyle, options: options);
     _inputTensorStyleMap = _interpreterStyle.getInputTensors();
     log('input style 0 ${_inputTensorStyleMap[0].toString()}');
     log('input style 1 ${_inputTensorStyleMap[1].toString()}');
@@ -111,27 +117,30 @@ class DenseExample extends State<MyHomePage> {
 
   Future<void> _processContent() async {
     log("Processing content... ${contentPath!}");
-    log("reading content image----");
     imageContentFile = dio.File(contentPath!).readAsBytesSync();
-    log("decoding image...");
-    final image = img.decodeImage(imageContentFile!);
-    //final image = await img.decodeImageFile(contentPath!);
-    setState(() {
-      imageContent = img.copyResize(image!,
-          width: contentSize["height"], height: contentSize["width"]);
-    });
+    final cmd = img.Command()
+      ..decodeImageFile(contentPath!)
+      ..executeThread();
+    log("awaiting content image...");
+    imageContent = await cmd.getImage();
+    originalSize["height"] = imageContent!.height.toInt();
+    originalSize["width"] = imageContent!.width.toInt();
+    imageContent = img.copyResize(imageContent!,
+        width: contentSize["height"], height: contentSize["width"]);
+    setState(() {});
   }
 
   Future<void> _processStyle() async {
-    log("loading style...");
     ByteData styleImage = await rootBundle.load(stylePath!);
     log("decoding style...");
-    final image = img.decodeImage(styleImage.buffer.asUint8List());
-    setState(() {
-      log("resizing style...");
-      imageStyle = img.copyResize(image!,
-          height: styleSize["height"], width: styleSize["width"]);
-    });
+    final cmd = img.Command()
+      ..decodeImage(styleImage.buffer.asUint8List())
+      ..copyResize(height: styleSize["height"], width: styleSize["width"])
+      ..executeThread();
+    log("getting style...");
+    imageStyle = await cmd.getImage();
+    log("style acquired!");
+    setState(() {});
   }
 
   Future<void> _initializePredict() async {
@@ -173,7 +182,7 @@ class DenseExample extends State<MyHomePage> {
       List.generate(
           contentSize["width"],
           (i) => List.generate(contentSize["height"], (j) {
-                final pixel = imageContent!.getPixel(j,i);
+                final pixel = imageContent!.getPixel(j, i);
                 return [pixel.r / 255, pixel.g / 255, pixel.b / 255];
               }))
     ];
@@ -191,9 +200,56 @@ class DenseExample extends State<MyHomePage> {
         width: contentSize["width"],
         height: contentSize["height"],
         bytes: buffer.buffer);
+    final stylizedReshaped = img.copyResize(stylized,
+        height: originalSize["height"], width: originalSize["width"]);
     log("setting stylized image...");
-    imageContentStylized = img.encodeJpg(stylized);
-    setState(() {});
+    setState(() {
+      imageContentStylized = img.encodeJpg(stylizedReshaped);
+    });
+  }
+
+  Future<void> _saveContent() async {
+    final plugin = DeviceInfoPlugin();
+    final android = await plugin.androidInfo;
+    const permissionStorage = ph.Permission.storage;
+    const permissionPhotos = ph.Permission.photos;
+    //const permissionVideos = ph.Permission.videos;
+    int androidVersion = android.version.sdkInt;
+
+    if (androidVersion < 33) {
+      final permissionDenied = await permissionStorage.isDenied;
+      if (permissionDenied) {
+        log('requesting storage permission...');
+        await permissionStorage.request();
+      }
+      log('Permission storage: ${await permissionStorage.isGranted}');
+    } else {
+      final permissionDenied = await permissionPhotos.isDenied;
+      if (permissionDenied) {
+        log("requesting photo and video permission...");
+        await permissionPhotos.request();
+        //final videosPermission = await permissionVideos.request();
+      }
+      log("Permission photos: ${await permissionPhotos.isGranted}");
+      //log("Permission videos: ${videosPermission.isGranted}");
+    }
+
+    String now = DateTime.now()
+        .toString()
+        .replaceAll(" ", "_")
+        .replaceAll(":", "-")
+        .replaceAll(".", "");
+    const basePath = '/storage/emulated/0/Download';
+    String baseName = pd.basenameWithoutExtension(contentPath!);
+    String baseExtension = pd.extension(contentPath!);
+    //final basePath = await pp.getDownloadsDirectory();
+    if ((androidVersion < 33 && await permissionStorage.isGranted) |
+        (androidVersion >= 33 && await permissionPhotos.isGranted)) {
+      log("Writing to: $basePath/${baseName}_stylized_$now$baseExtension");
+      await dio.File("$basePath/${baseName}_stylized$now$baseExtension")
+          .writeAsBytes(imageContentStylized!.buffer.asInt8List());
+      log("file saved");
+    }
   }
 
   @override
@@ -221,40 +277,44 @@ class DenseExample extends State<MyHomePage> {
                   height: 200,
                   width: 200,
                 ),
-              ElevatedButton(
-                  onPressed: () async {
-                    final result =
-                        await _picker.pickImage(source: ImageSource.gallery);
-                    contentPath = result?.path;
-                    log(contentPath.toString());
-                    setState(() {});
-                    _processContent();
-                  },
-                  child: const Text("Pick Content Image")
-                  ),
+              Column(children: [
+                ElevatedButton(
+                    onPressed: () async {
+                      final result =
+                          await _picker.pickImage(source: ImageSource.gallery);
+                      contentPath = result?.path;
+                      log(contentPath.toString());
+                      setState(() {});
+                      _processContent();
+                    },
+                    child: const Text("Pick Content Image")),
+                if (imageContentStylized != null)
+                  ElevatedButton(
+                      onPressed: _saveContent,
+                      child: const Text("Save Stylized Image"))
+              ]),
               //const SizedBox(height: 200, width: 200),
               if (imageContentStylized != null)
-                  Image.memory(
-                    imageContentStylized!,
-                    height: 200,
-                    width: 200,
-                  ),
+                Image.memory(
+                  imageContentStylized!,
+                  height: 200,
+                  width: 200,
+                ),
             ]),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: List.generate(10, (index) {
+                children: List.generate(17, (index) {
                   final currentImagePath =
-                      styleBasePath + index.toString() + ".jpg";
+                      '$styleBasePath${index.toString()}.jpg';
                   return Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: InkWell(
                       onTap: () {
-                        log(stylePath.toString());
-                        stylePath = currentImagePath;
-                        setState(() {});
+                        setState(() {
+                          stylePath = currentImagePath;
+                        });
                         if (stylePath != null && contentPath != null) {
-                          _processStyle();
                           if (imageContent != null) _runInference();
                         }
                       },
