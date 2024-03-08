@@ -225,8 +225,8 @@ class DenseExample extends State<MyHomePage> {
       log('Permission storage: ${await permissionStorage.isGranted}');
     } else {
       final permissionDenied = await permissionPhotos.isDenied;
-      if (permissionDenied) {
-        log("requesting photo and video permission...");
+      if (permissionDenied | await permissionPhotos.isPermanentlyDenied) {
+        log("requesting photo permission...");
         await permissionPhotos.request();
         //final videosPermission = await permissionVideos.request();
       }
