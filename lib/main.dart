@@ -1,13 +1,14 @@
-import 'dart:ui';
+//import 'dart:ui';
+//import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/rendering.dart';
-import 'package:flutter/widgets.dart';
+//import 'package:flutter/cupertino.dart';
+//import 'package:flutter/rendering.dart';
+//import 'package:flutter/widgets.dart';
 //import 'package:app_settings/app_settings.dart' as app_settings;
 import 'package:permission_handler/permission_handler.dart' as ph;
 import 'dart:async';
-import 'dart:typed_data';
+//import 'dart:typed_data';
 import 'package:path/path.dart' as pd;
 import 'package:flutter/material.dart';
 import 'package:tflite_flutter/tflite_flutter.dart' as tflite;
@@ -15,7 +16,7 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'dart:developer';
 import 'dart:io' as dio;
-import 'package:flutter/services.dart' show rootBundle;
+//import 'package:flutter/services.dart' show rootBundle;
 //import 'package:path_provider/path_provider.dart' as pp;
 
 void main() {
@@ -43,10 +44,10 @@ class MyHomePage extends StatefulWidget {
   final String title;
 
   @override
-  State<MyHomePage> createState() => DenseExample();
+  State<MyHomePage> createState() => StyleTransfer();
 }
 
-class DenseExample extends State<MyHomePage> {
+class StyleTransfer extends State<MyHomePage> {
   final String modelPathPredict = "assets/models/style_predict.tflite";
   final String modelPathStyle = "assets/models/style_transform.tflite";
   final styleBasePath = "assets/styles/";
@@ -54,6 +55,8 @@ class DenseExample extends State<MyHomePage> {
   String? contentPath = '';
   late tflite.Interpreter _interpreterPredict;
   late tflite.Interpreter _interpreterStyle;
+  //late final tflite.IsolateInterpreter predictionIsolateInterpreter;
+  //late final tflite.IsolateInterpreter styleIsolateInterpreter;
   late tflite.Tensor _inputTensorPredict;
   late tflite.Tensor _outputTensorPredict;
   late List<List<List<List<double>>>> inputsStyle;
@@ -63,10 +66,10 @@ class DenseExample extends State<MyHomePage> {
   late List<List<List<List<double>>>> outputsPredict;
   late List<List<List<List<double>>>> outputsStylized;
   final _picker = ImagePicker();
-  late img.Image? imageContent;
+  img.Image? imageContent;
   Uint8List? imageContentFile;
   Uint8List? imageContentStylized;
-  Uint8List? _currentStyleImage;
+  //Uint8List? _currentStyleImage;
   late img.Image? imageStyle;
   late List<Uint8List> stylesListView;
   String modelLoadedPredict = 'Predict NotLoaded';
@@ -95,6 +98,7 @@ class DenseExample extends State<MyHomePage> {
     // options.addDelegate(delegate);
     _interpreterPredict =
         await tflite.Interpreter.fromAsset(modelPathPredict, options: options);
+    //predictionIsolateInterpreter = await tflite.IsolateInterpreter.create(address: _interpreterPredict.address);
     _inputTensorPredict = _interpreterPredict.getInputTensors().first;
     log('predict inputs ${_inputTensorPredict.toString()}');
     _outputTensorPredict = _interpreterPredict.getOutputTensors().first;
@@ -114,6 +118,8 @@ class DenseExample extends State<MyHomePage> {
     }
     _interpreterStyle =
         await tflite.Interpreter.fromAsset(modelPathStyle, options: options);
+    //styleIsolateInterpreter = await tflite.IsolateInterpreter.create(address: _interpreterStyle.address);
+
     _inputTensorStyleMap = _interpreterStyle.getInputTensors();
     log('input style 0 ${_inputTensorStyleMap[0].toString()}');
     log('input style 1 ${_inputTensorStyleMap[1].toString()}');
@@ -194,6 +200,7 @@ class DenseExample extends State<MyHomePage> {
   }
 
   Future<void> _runInference() async {
+    log('is loading $_isLoading');
     log("processing style...");
     await _processStyle();
     log("processing inputs style...");
@@ -215,8 +222,10 @@ class DenseExample extends State<MyHomePage> {
               }))
     ];
     log("running predict...");
+    //predictionIsolateInterpreter.run(inputsStyle, outputsPredict);
     _interpreterPredict.run(inputsStyle, outputsPredict);
     log("running style transfer...");
+    //styleIsolateInterpreter.runForMultipleInputs(
     _interpreterStyle.runForMultipleInputs(
         [inputsContent, outputsPredict], {0: outputsStylized});
     log("decoding style output...");
@@ -235,6 +244,7 @@ class DenseExample extends State<MyHomePage> {
       imageContentStylized = img.encodeJpg(stylizedReshaped);
       displayContent = false;
       _isLoading = false;
+      log('is loading $_isLoading');
     });
   }
 
@@ -294,8 +304,9 @@ class DenseExample extends State<MyHomePage> {
           imageContentFile!,
           fit: BoxFit.fill,
         );
-      } else
+      } else {
         return null;
+      }
     }
   }
 
@@ -315,33 +326,62 @@ class DenseExample extends State<MyHomePage> {
       DeviceOrientation.portraitDown,
     ]);
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.amber,
+        title: Title(
+          title: "Style Transfer",
+          color: Colors.black,
+          child: const Center(child: Text("Style Transfer")),
+        ),
+      ),
       body: Align(
         alignment: Alignment.center,
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          //mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            /*ConstrainedBox(
-                constraints: const BoxConstraints(
-                    maxWidth: BorderSide.strokeAlignCenter,
-                    maxHeight: 100)),*/
-            AspectRatio(
-                aspectRatio: originalSize["width"] / originalSize["height"],
-                child: _returnImage()),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              ElevatedButton(
-                  onPressed: () async {
-                    final result =
-                        await _picker.pickImage(source: ImageSource.gallery);
-                    contentPath = result?.path;
-                    log(contentPath.toString());
-                    setState(() {});
-                    _processContent();
-                  },
-                  child: const Text("Pick Content Image")),
+            Expanded(child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+              return Container(
+                  alignment: Alignment.center,
+                  height: constraints.maxHeight,
+                  width: constraints.maxWidth,
+                  color: Colors.black,
+                  child: _returnImage());
+            })),
+            /*Stack(fit: StackFit.values.first, children: [
+                  if (_isLoading)
+                    const Opacity(
+                        opacity: 0.8,
+                        child: ModalBarrier(
+                          dismissible: false,
+                          color: Colors.black,
+                        )),
+                  if (_isLoading)
+                    const Center(child: CircularProgressIndicator()),
+                  AspectRatio(
+                      aspectRatio:
+                          originalSize["width"] / originalSize["height"],
+                      child: _returnImage())),
+                ])),*/
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Align(
+                  alignment: Alignment.centerLeft,
+                  child: ElevatedButton(
+                      onPressed: () async {
+                        final result = await _picker.pickImage(
+                            source: ImageSource.gallery);
+                        contentPath = result?.path;
+                        log(contentPath.toString());
+                        setState(() {});
+                        _processContent();
+                      },
+                      child: const Text("Pick Content Image"))),
               if (imageContentStylized != null)
-                ElevatedButton(
-                    onPressed: _saveContent,
-                    child: const Text("Save Stylized Image"))
+                Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton(
+                        onPressed: _saveContent,
+                        child: const Text("Save Stylized Image")))
             ]),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -357,8 +397,9 @@ class DenseExample extends State<MyHomePage> {
                           stylePath = currentImagePath;
                         });
                         if (stylePath != null && contentPath != null) {
-                          _isLoading = true;
-                          setState(() {});
+                          setState(() {
+                            _isLoading = true;
+                          });
                           if (imageContent != null) _runInference();
                         }
                       },
@@ -374,7 +415,7 @@ class DenseExample extends State<MyHomePage> {
                   );
                 }),
               ),
-            ),
+            )
           ],
         ),
       ),
