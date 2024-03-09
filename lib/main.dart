@@ -1,4 +1,9 @@
+import 'dart:ui';
+import 'package:flutter/services.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/widgets.dart';
 //import 'package:app_settings/app_settings.dart' as app_settings;
 import 'package:permission_handler/permission_handler.dart' as ph;
 import 'dart:async';
@@ -11,7 +16,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:developer';
 import 'dart:io' as dio;
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:path_provider/path_provider.dart' as pp;
+//import 'package:path_provider/path_provider.dart' as pp;
 
 void main() {
   runApp(const MyApp(title: 'App'));
@@ -61,7 +66,9 @@ class DenseExample extends State<MyHomePage> {
   late img.Image? imageContent;
   Uint8List? imageContentFile;
   Uint8List? imageContentStylized;
+  Uint8List? _currentStyleImage;
   late img.Image? imageStyle;
+  late List<Uint8List> stylesListView;
   String modelLoadedPredict = 'Predict NotLoaded';
   String modelLoadedStyle = 'Predict NotLoaded';
   String inputText = '0';
@@ -69,6 +76,8 @@ class DenseExample extends State<MyHomePage> {
   Map contentSize = {"height": 384, "width": 384};
   Map styleSize = {"height": 256, "width": 256};
   Map originalSize = {"height": 384, "width": 384};
+  bool displayContent = false;
+  bool _isLoading = false;
 
   Future<void> _loadModelPredict() async {
     final options = tflite.InterpreterOptions();
@@ -115,6 +124,23 @@ class DenseExample extends State<MyHomePage> {
     });
   }
 
+  Future<Image> _processCurrentStyleImage(String currentPath) async {
+    ByteData currentStyleImage = await rootBundle.load(currentPath);
+    log("decoding style...");
+    final cmd = img.Command()
+      ..decodeImage(currentStyleImage.buffer.asUint8List())
+      ..copyCrop(
+          x: 100,
+          y: 100,
+          height: styleSize["height"],
+          width: styleSize["width"])
+      ..executeThread();
+    log("getting style...");
+    final currentStyle = await cmd.getImage();
+
+    return Image.memory(currentStyle!.buffer.asUint8List());
+  }
+
   Future<void> _processContent() async {
     log("Processing content... ${contentPath!}");
     imageContentFile = dio.File(contentPath!).readAsBytesSync();
@@ -127,7 +153,9 @@ class DenseExample extends State<MyHomePage> {
     originalSize["width"] = imageContent!.width.toInt();
     imageContent = img.copyResize(imageContent!,
         width: contentSize["height"], height: contentSize["width"]);
-    setState(() {});
+    setState(() {
+      displayContent = true;
+    });
   }
 
   Future<void> _processStyle() async {
@@ -205,6 +233,8 @@ class DenseExample extends State<MyHomePage> {
     log("setting stylized image...");
     setState(() {
       imageContentStylized = img.encodeJpg(stylizedReshaped);
+      displayContent = false;
+      _isLoading = false;
     });
   }
 
@@ -252,6 +282,23 @@ class DenseExample extends State<MyHomePage> {
     }
   }
 
+  Image? _returnImage() {
+    if (imageContentStylized != null && !displayContent) {
+      return Image.memory(
+        imageContentStylized!,
+        fit: BoxFit.fill,
+      );
+    } else {
+      if (imageContentFile != null && displayContent) {
+        return Image.memory(
+          imageContentFile!,
+          fit: BoxFit.fill,
+        );
+      } else
+        return null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -263,43 +310,38 @@ class DenseExample extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
     return Scaffold(
       body: Align(
         alignment: Alignment.center,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Row(children: [
-              const SizedBox(height: 200, width: 200),
-              if (imageContentFile != null)
-                Image.memory(
-                  imageContentFile!,
-                  height: 200,
-                  width: 200,
-                ),
-              Column(children: [
-                ElevatedButton(
-                    onPressed: () async {
-                      final result =
-                          await _picker.pickImage(source: ImageSource.gallery);
-                      contentPath = result?.path;
-                      log(contentPath.toString());
-                      setState(() {});
-                      _processContent();
-                    },
-                    child: const Text("Pick Content Image")),
-                if (imageContentStylized != null)
-                  ElevatedButton(
-                      onPressed: _saveContent,
-                      child: const Text("Save Stylized Image"))
-              ]),
-              //const SizedBox(height: 200, width: 200),
+            /*ConstrainedBox(
+                constraints: const BoxConstraints(
+                    maxWidth: BorderSide.strokeAlignCenter,
+                    maxHeight: 100)),*/
+            AspectRatio(
+                aspectRatio: originalSize["width"] / originalSize["height"],
+                child: _returnImage()),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              ElevatedButton(
+                  onPressed: () async {
+                    final result =
+                        await _picker.pickImage(source: ImageSource.gallery);
+                    contentPath = result?.path;
+                    log(contentPath.toString());
+                    setState(() {});
+                    _processContent();
+                  },
+                  child: const Text("Pick Content Image")),
               if (imageContentStylized != null)
-                Image.memory(
-                  imageContentStylized!,
-                  height: 200,
-                  width: 200,
-                ),
+                ElevatedButton(
+                    onPressed: _saveContent,
+                    child: const Text("Save Stylized Image"))
             ]),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -315,6 +357,8 @@ class DenseExample extends State<MyHomePage> {
                           stylePath = currentImagePath;
                         });
                         if (stylePath != null && contentPath != null) {
+                          _isLoading = true;
+                          setState(() {});
                           if (imageContent != null) _runInference();
                         }
                       },
@@ -322,14 +366,15 @@ class DenseExample extends State<MyHomePage> {
                         padding: const EdgeInsets.all(8),
                         child: Image.asset(
                           currentImagePath,
-                          height: 96,
+                          height: 100,
+                          width: 100,
                         ),
                       ),
                     ),
                   );
                 }),
               ),
-            )
+            ),
           ],
         ),
       ),
