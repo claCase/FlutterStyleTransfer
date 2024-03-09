@@ -148,6 +148,7 @@ class StyleTransfer extends State<MyHomePage> {
   }
 
   Future<void> _processContent() async {
+    if(contentPath != null){
     log("Processing content... ${contentPath!}");
     imageContentFile = dio.File(contentPath!).readAsBytesSync();
     final cmd = img.Command()
@@ -162,6 +163,7 @@ class StyleTransfer extends State<MyHomePage> {
     setState(() {
       displayContent = true;
     });
+    }
   }
 
   Future<void> _processStyle() async {
