@@ -88,8 +88,8 @@ class StyleTransfer extends State<MyHomePage> {
     //options.useNnApiForAndroid = true;
 
     if (dio.Platform.isAndroid) {
-      final delegate = tflite.XNNPackDelegate();
-      //final delegate = tflite.GpuDelegateV2();
+      //final delegate = tflite.XNNPackDelegate();
+      final delegate = tflite.GpuDelegateV2();
       //final delegate_options = tflite.GpuDelegateOptionsV2();
 
       options.addDelegate(delegate);
@@ -148,21 +148,32 @@ class StyleTransfer extends State<MyHomePage> {
   }
 
   Future<void> _processContent() async {
-    if(contentPath != null){
-    log("Processing content... ${contentPath!}");
-    imageContentFile = dio.File(contentPath!).readAsBytesSync();
-    final cmd = img.Command()
-      ..decodeImageFile(contentPath!)
-      ..executeThread();
-    log("awaiting content image...");
-    imageContent = await cmd.getImage();
-    originalSize["height"] = imageContent!.height.toInt();
-    originalSize["width"] = imageContent!.width.toInt();
-    imageContent = img.copyResize(imageContent!,
-        width: contentSize["height"], height: contentSize["width"]);
-    setState(() {
-      displayContent = true;
-    });
+    if (contentPath != null) {
+      log("Processing content... ${contentPath!}");
+      imageContentFile = dio.File(contentPath!).readAsBytesSync();
+      final cmd = img.Command()
+        ..decodeImageFile(contentPath!)
+        ..executeThread();
+      log("awaiting content image...");
+      imageContent = await cmd.getImage();
+      originalSize["height"] = imageContent!.height.toInt();
+      originalSize["width"] = imageContent!.width.toInt();
+      imageContent = img.copyResize(imageContent!,
+          width: contentSize["height"], height: contentSize["width"]);
+
+      log("processing inputs content...");
+      inputsContent = [
+        List.generate(
+            contentSize["width"],
+            (i) => List.generate(contentSize["height"], (j) {
+                  final pixel = imageContent!.getPixel(j, i);
+                  return [pixel.r / 255, pixel.g / 255, pixel.b / 255];
+                }))
+      ];
+
+      setState(() {
+        displayContent = true;
+      });
     }
   }
 
@@ -214,15 +225,7 @@ class StyleTransfer extends State<MyHomePage> {
                 return [pixel.r / 255, pixel.g / 255, pixel.b / 255];
               }))
     ];
-    log("processing inputs content...");
-    inputsContent = [
-      List.generate(
-          contentSize["width"],
-          (i) => List.generate(contentSize["height"], (j) {
-                final pixel = imageContent!.getPixel(j, i);
-                return [pixel.r / 255, pixel.g / 255, pixel.b / 255];
-              }))
-    ];
+
     log("running predict...");
     //predictionIsolateInterpreter.run(inputsStyle, outputsPredict);
     _interpreterPredict.run(inputsStyle, outputsPredict);
@@ -242,6 +245,7 @@ class StyleTransfer extends State<MyHomePage> {
     final stylizedReshaped = img.copyResize(stylized,
         height: originalSize["height"], width: originalSize["width"]);
     log("setting stylized image...");
+    log("prediction Time is ${_interpreterPredict.lastNativeInferenceDurationMicroSeconds.toString()}");
     setState(() {
       imageContentStylized = img.encodeJpg(stylizedReshaped);
       displayContent = false;
@@ -382,7 +386,13 @@ class StyleTransfer extends State<MyHomePage> {
                 Align(
                     alignment: Alignment.centerRight,
                     child: ElevatedButton(
-                        onPressed: _saveContent,
+                        onPressed: () {
+                          _saveContent();
+                          const snackBar = SnackBar(
+                            content: const Text("Image Saved in Downloads Folder"),
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(snackBar);
+                        },
                         child: const Text("Save Stylized Image")))
             ]),
             SingleChildScrollView(
